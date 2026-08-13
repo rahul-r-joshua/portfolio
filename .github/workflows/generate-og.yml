@@ -1,0 +1,75 @@
+name: Generate Portfolio Preview
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+  workflow_dispatch:
+
+jobs:
+  generate-preview:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for GitHub Pages
+        run: |
+          echo "Waiting for portfolio deployment..."
+
+          for i in {1..30}; do
+            STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" \
+              https://rahul-r-joshua.github.io/portfolio/)
+
+            echo "Attempt $i: HTTP $STATUS"
+
+            if [ "$STATUS" = "200" ]; then
+              echo "Portfolio is online."
+              break
+            fi
+
+            sleep 10
+          done
+
+      - name: Generate preview image
+        run: npm run generate-og
+
+      - name: Check generated image
+        run: |
+          if [ ! -f public/og-image.png ]; then
+            echo "Preview image was not generated."
+            exit 1
+          fi
+
+          file public/og-image.png
+
+      - name: Commit preview image
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]"
+
+          git add public/og-image.png public/og-preview.png
+
+          if git diff --cached --quiet; then
+            echo "No changes to preview image."
+          else
+            git commit -m "Update portfolio social preview"
+            git push
+          fi
